@@ -200,11 +200,11 @@ class RedTeamEvaluator(GreenAgent):
                 results_dir = Path(results_dir_env)
                 result_filename = f"eval_{config.domain}_{config.attack_vector}.json"
             else:
-                # Standalone run - use results/ with timestamp
-                results_dir = Path("results")
-                results_dir.mkdir(exist_ok=True)
+                # Standalone run - create timestamped folder
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                result_filename = f"eval_{config.domain}_{config.attack_vector}_{timestamp}.json"
+                results_dir = Path("results") / f"run_{timestamp}"
+                results_dir.mkdir(parents=True, exist_ok=True)
+                result_filename = f"eval_{config.domain}_{config.attack_vector}.json"
 
             result_path = results_dir / result_filename
 
