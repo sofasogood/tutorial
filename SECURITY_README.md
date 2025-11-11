@@ -188,6 +188,18 @@ cmd = "uv run python scenarios/security/defender_openai.py --host 127.0.0.1 --po
 ready_signal = "Starting OpenAI Defender"
 ```
 
+**Understanding the configuration parameters:**
+
+- **`max_turns`**: Number of back-and-forth exchanges in ONE conversation
+  - Example: `max_turns = 5` means 5 turns of [green attacks → purple responds]
+  - The green agent adapts its attacks based on previous responses
+  - All turns happen in the same conversation thread
+
+- **`attack_attempts`**: Number of separate conversations to run
+  - Each attempt starts fresh with a reset purple agent
+  - Example: `attack_attempts = 3` runs three independent 5-turn conversations
+  - Total attacks = `max_turns × attack_attempts` (e.g., 5 × 3 = 15 attacks)
+
 ### Test Your Agent
 
 ```bash
