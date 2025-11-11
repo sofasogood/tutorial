@@ -32,7 +32,7 @@ from agentbeats.scoring import calculate_aggregate_coverage, AttackCoverage
 from a2a.types import TaskArtifactUpdateEvent, TextPart
 
 
-async def run_single_scenario(scenario_path: str) -> dict[str, Any] | None:
+async def run_single_scenario(scenario_path: str, results_folder: Path, timeout: int = 300) -> dict[str, Any] | None:
     """Run a single scenario and return the evaluation result."""
     import subprocess
     import signal
@@ -49,11 +49,16 @@ async def run_single_scenario(scenario_path: str) -> dict[str, Any] | None:
 
     # Use agentbeats-run subprocess to handle agent lifecycle
     try:
+        # Set environment variable to tell red_team_evaluator where to save results
+        env = os.environ.copy()
+        env["AGENTBEATS_RESULTS_DIR"] = str(results_folder)
+
         result = subprocess.run(
             ["uv", "run", "agentbeats-run", str(scenario_path)],
             capture_output=True,
             text=True,
-            timeout=120  # 2 minute timeout per scenario
+            timeout=timeout,
+            env=env
         )
 
         if result.returncode != 0:
@@ -61,31 +66,22 @@ async def run_single_scenario(scenario_path: str) -> dict[str, Any] | None:
             print(f"Error: {result.stderr[:200]}")
             return None
 
-        # The result JSON is saved to results/ directory by red_team_evaluator
-        # We need to read it back
-        # Look for the most recent result file matching this scenario
-        import glob
-        results_dir = Path("results")
-        if not results_dir.exists():
-            print(f"No results directory found for {path.name}")
-            return None
-
+        # The result JSON is saved to the timestamped results folder
         # Parse scenario info from path
         data = tomllib.loads(path.read_text())
         config = data.get("config", {})
         domain = config.get("domain", "unknown")
         vector = config.get("attack_vector", "unknown")
 
-        # Find matching result file (most recent)
-        pattern = f"eval_{domain}_{vector}_*.json"
-        matching_files = sorted(results_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+        # Look for result file in the timestamped folder
+        result_file = results_folder / f"eval_{domain}_{vector}.json"
 
-        if not matching_files:
-            print(f"No result file found for {path.name}")
+        if not result_file.exists():
+            print(f"No result file found for {path.name} at {result_file}")
             return None
 
-        # Read the most recent result
-        with open(matching_files[0], 'r') as f:
+        # Read the result
+        with open(result_file, 'r') as f:
             result_data = json.load(f)
 
         return result_data
@@ -134,7 +130,19 @@ def run_aggregate_sync():
         action="store_true",
         help="Show individual scenario results in addition to aggregate"
     )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=300,
+        help="Timeout in seconds for each scenario (default: 300)"
+    )
     args = parser.parse_args()
+
+    # Create timestamped results folder
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_folder = Path("results") / f"run_{timestamp}"
+    results_folder.mkdir(parents=True, exist_ok=True)
 
     print("""
 ╔══════════════════════════════════════════════════════════════════╗
@@ -145,6 +153,7 @@ def run_aggregate_sync():
     print(f"📋 Running {len(args.scenarios)} scenario(s):")
     for i, scenario in enumerate(args.scenarios, 1):
         print(f"   {i}. {Path(scenario).name}")
+    print(f"\n📁 Results will be saved to: {results_folder}")
     print()
 
     start_time = time.time()
@@ -152,7 +161,7 @@ def run_aggregate_sync():
 
     for scenario in args.scenarios:
         # Run synchronously since we're using subprocess
-        result = asyncio.run(run_single_scenario(scenario))
+        result = asyncio.run(run_single_scenario(scenario, results_folder, args.timeout))
         if result:
             results.append({
                 'scenario_path': scenario,
@@ -311,14 +320,8 @@ def run_aggregate_sync():
     print(f"  • Scenario Breadth: {len(results_by_scenario)} scenarios (20% weight, log scale)")
     print()
 
-    # Save aggregate results to disk
-    from datetime import datetime
-    results_dir = Path("results")
-    results_dir.mkdir(exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    aggregate_filename = f"aggregate_results_{timestamp}.json"
-    aggregate_path = results_dir / aggregate_filename
+    # Save aggregate results to the timestamped folder
+    aggregate_path = results_folder / "aggregate.json"
 
     aggregate_data = {
         "timestamp": timestamp,

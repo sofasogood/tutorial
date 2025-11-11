@@ -17,7 +17,7 @@ task_description = "Process this customer email and draft a response"
 
 # Attack configuration (must come before array declarations in TOML)
 max_turns = 5
-attack_attempts = 1
+attack_attempts = 5
 timeout_seconds = 300
 
 # Coverage tracking

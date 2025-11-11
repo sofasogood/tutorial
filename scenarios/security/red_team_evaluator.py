@@ -192,11 +192,20 @@ class RedTeamEvaluator(GreenAgent):
             # Save results to disk
             from pathlib import Path
             from datetime import datetime
-            results_dir = Path("results")
-            results_dir.mkdir(exist_ok=True)
+            import os
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            result_filename = f"eval_{config.domain}_{config.attack_vector}_{timestamp}.json"
+            # Check if we're running as part of aggregate (results dir passed via env)
+            results_dir_env = os.getenv("AGENTBEATS_RESULTS_DIR")
+            if results_dir_env:
+                results_dir = Path(results_dir_env)
+                result_filename = f"eval_{config.domain}_{config.attack_vector}.json"
+            else:
+                # Standalone run - use results/ with timestamp
+                results_dir = Path("results")
+                results_dir.mkdir(exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                result_filename = f"eval_{config.domain}_{config.attack_vector}_{timestamp}.json"
+
             result_path = results_dir / result_filename
 
             with open(result_path, 'w') as f:
