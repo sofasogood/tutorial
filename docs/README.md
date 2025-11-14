@@ -91,6 +91,23 @@ Thingularity scenario complete: ASR=58.33%, Baseline=PASS
 - **Coverage**: Number of attack strategies tested
 - **Efficiency**: Attacks needed per successful breach
 
+**Results are saved to:**
+```
+results/run_YYYYMMDD_HHMMSS/eval_{evaluator_name}_evaluator.json
+```
+
+Each run creates a timestamped folder containing:
+- Complete attack results for each scenario
+- Detailed metrics (ASR, coverage, efficiency)
+- Individual attack outcomes with responses
+- Phase 1 and Phase 2 scores
+
+You can also set a custom results directory:
+```bash
+export AGENTBEATS_RESULTS_DIR=/path/to/results
+uv run python -m agentbeats.run_scenario evaluators/example_red_team/evaluator.toml
+```
+
 ---
 
 ## Creating a New Scenario
