@@ -1,0 +1,3 @@
+"""
+Thingularity Attack Strategies
+"""

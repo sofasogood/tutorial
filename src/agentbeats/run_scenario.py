@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import json
 import os, sys, time, subprocess, shlex, signal
 from pathlib import Path
 import tomllib
@@ -57,10 +58,11 @@ async def wait_for_agents(cfg: dict, timeout: int = 30) -> bool:
     return False
 
 
-def parse_toml(scenario_path: str) -> dict:
-    path = Path(scenario_path)
+def parse_toml(evaluator_path: str) -> dict:
+    """Parse evaluator TOML file"""
+    path = Path(evaluator_path)
     if not path.exists():
-        print(f"Error: Scenario file not found: {path}")
+        print(f"Error: Evaluator file not found: {path}")
         sys.exit(1)
 
     data = tomllib.loads(path.read_text())
@@ -72,10 +74,25 @@ def parse_toml(scenario_path: str) -> dict:
         host, port = s.split(":", 1)
         return host, int(port)
 
+    # Get evaluator info
+    evaluator_info = data.get("evaluator", {})
+    evaluator_name = evaluator_info.get("name", "unknown_evaluator")
+
+    # Get green agent endpoint
     green_ep = data.get("green_agent", {}).get("endpoint", "")
     g_host, g_port = host_port(green_ep)
-    green_cmd = data.get("green_agent", {}).get("cmd", "")
 
+    # Build green agent command with scenarios
+    scenarios_list = data.get("scenarios", [])
+    scenarios_json = json.dumps(scenarios_list)
+    green_cmd = (
+        f"uv run python evaluators/{evaluator_name}/evaluator.py "
+        f"--host {g_host} --port {g_port} "
+        f"--evaluator-name {evaluator_name} "
+        f"--scenarios '{scenarios_json}'"
+    )
+
+    # Get participants (defenders)
     parts = []
     for p in data.get("participants", []):
         if isinstance(p, dict) and "endpoint" in p:
@@ -92,19 +109,40 @@ def parse_toml(scenario_path: str) -> dict:
         "green_agent": {"host": g_host, "port": g_port, "cmd": green_cmd},
         "participants": parts,
         "config": cfg,
+        "evaluator_name": evaluator_name
     }
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run agent scenario")
-    parser.add_argument("scenario", help="Path to scenario TOML file")
+    parser = argparse.ArgumentParser(description="Run evaluator against defender")
+    parser.add_argument("evaluator", help="Path to evaluator TOML file (e.g., evaluators/team/evaluator.toml)")
     parser.add_argument("--show-logs", action="store_true",
                         help="Show agent stdout/stderr")
     parser.add_argument("--serve-only", action="store_true",
                         help="Start agent servers only without running evaluation")
+    parser.add_argument("--defender",
+                        help="Path to defender Python file (e.g., defenders/baseline_generic.py). "
+                             "Overrides the defender specified in evaluator TOML.")
     args = parser.parse_args()
 
-    cfg = parse_toml(args.scenario)
+    cfg = parse_toml(args.evaluator)
+
+    # If --defender is provided, replace the first participant's command
+    if args.defender:
+        defender_path = Path(args.defender)
+        if not defender_path.exists():
+            print(f"Error: Defender file not found: {defender_path}")
+            sys.exit(1)
+
+        if cfg["participants"]:
+            # Replace the first participant (the defender) with the specified one
+            participant = cfg["participants"][0]
+            new_cmd = f"uv run python {defender_path} --host {participant['host']} --port {participant['port']}"
+            participant["cmd"] = new_cmd
+            print(f"Using custom defender: {defender_path}")
+        else:
+            print("Warning: No participants found in scenario to replace with custom defender")
+
 
     sink = None if args.show_logs or args.serve_only else subprocess.DEVNULL
     parent_bin = str(Path(sys.executable).parent)
@@ -153,7 +191,7 @@ def main():
                     time.sleep(0.5)
         else:
             client_proc = subprocess.Popen(
-                [sys.executable, "-m", "agentbeats.client_cli", args.scenario],
+                [sys.executable, "-m", "agentbeats.client_cli", args.evaluator],
                 env=base_env,
                 start_new_session=True,
             )
